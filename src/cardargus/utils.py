@@ -13,7 +13,15 @@ from typing import Any, NamedTuple, overload
 from ._colors import lookup_named_color
 from .fonts import text_width
 
-__all__ = ["escape_xml", "is_light_color", "compress_number", "wrap_text", "WrappedText"]
+__all__ = [
+    "escape_xml",
+    "is_light_color",
+    "compress_number",
+    "wrap_text",
+    "WrappedText",
+    "validate_color",
+    "validate_font_family",
+]
 
 
 def _is_missing(x: Any) -> bool:
@@ -111,6 +119,60 @@ def color_to_rgb(color: str) -> tuple[int, int, int]:
     if rgb is None:
         raise ValueError(f"`color` is not a valid color: {color!r}.")
     return rgb
+
+
+_HEX_COLOR_RE = re.compile(r"#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})")
+# A CSS linear-gradient() made only of the tokens css_gradient_to_svg()
+# understands: angles, "to <side>" keywords, hex stops, percentages, commas.
+_GRADIENT_ARGS_RE = re.compile(r"[#0-9A-Za-z%.,\s-]*")
+_GRADIENT_RE = re.compile(r"\s*linear-gradient\((.*)\)\s*", re.IGNORECASE | re.DOTALL)
+_FONT_FAMILY_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _.-]{0,99}")
+
+
+def validate_color(
+    color: Any,
+    *,
+    arg: str = "color",
+    allow_gradient: bool = False,
+    allow_none: bool = False,
+) -> str:
+    """Return *color* if it is a safe color value, else raise ``ValueError``.
+
+    Accepted: ``#rgb``, ``#rgba``, ``#rrggbb``, ``#rrggbbaa``, a CSS/R named
+    color (see :mod:`cardargus._colors`), optionally ``"none"``, and
+    optionally a ``linear-gradient(...)`` whose arguments contain only
+    angles, direction keywords, hex stops and percentages. Validation keeps
+    user input from injecting markup into SVG attributes or ``<style>``.
+    """
+    if not isinstance(color, str) or not color:
+        raise ValueError(f"`{arg}` must be a non-empty color string, not {color!r}.")
+    if _HEX_COLOR_RE.fullmatch(color):
+        return color
+    if allow_none and color.lower() == "none":
+        return color
+    if lookup_named_color(color) is not None and re.fullmatch(r"[A-Za-z0-9 ]+", color):
+        return color
+    if allow_gradient:
+        m = _GRADIENT_RE.fullmatch(color)
+        if m and _GRADIENT_ARGS_RE.fullmatch(m.group(1)):
+            return color
+    kinds = "a hex color or a named color"
+    if allow_gradient:
+        kinds += ", or a CSS linear-gradient(...)"
+    raise ValueError(f"`{arg}` must be {kinds}; got {color!r}.")
+
+
+def validate_font_family(font: Any, *, arg: str = "font") -> str:
+    """Return *font* if it is a plausible font family name, else raise ``ValueError``.
+
+    Letters, digits, spaces, ``_``, ``.`` and ``-`` only (every Google Fonts
+    family qualifies), so the name is safe in CSS, attributes and URLs.
+    """
+    if not isinstance(font, str) or not _FONT_FAMILY_RE.fullmatch(font):
+        raise ValueError(
+            f"`{arg}` must be a font family name (letters, digits, spaces, '_', '.', '-'); got {font!r}."
+        )
+    return font
 
 
 def is_light_color(color: str) -> bool:

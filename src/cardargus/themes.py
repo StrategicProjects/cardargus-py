@@ -6,6 +6,8 @@ import dataclasses
 from dataclasses import dataclass
 from typing import Any
 
+from .utils import validate_color, validate_font_family
+
 __all__ = ["CardTheme", "card_theme", "card_themes", "THEME_COMPONENTS"]
 
 
@@ -139,8 +141,8 @@ def card_theme(name: str | CardTheme = "default", **overrides: Any) -> CardTheme
             ``bg_color="#123456"``.
 
     Raises:
-        ValueError: For an unknown preset, a non-string name or an unknown
-            component.
+        ValueError: For an unknown preset, a non-string name, an unknown
+            component, or an invalid color/font value.
     """
     if isinstance(name, CardTheme):
         base = name
@@ -162,5 +164,11 @@ def card_theme(name: str | CardTheme = "default", **overrides: Any) -> CardTheme
                 f"Unknown theme component{plural}: {', '.join(map(repr, unknown))}. "
                 f"Valid components: {', '.join(THEME_COMPONENTS)}."
             )
+        for key, value in overrides.items():
+            if key == "font":
+                if value is not None:
+                    validate_font_family(value, arg="font")
+            else:
+                validate_color(value, arg=key, allow_gradient=(key == "bg_color"))
         base = dataclasses.replace(base, **overrides)
     return base

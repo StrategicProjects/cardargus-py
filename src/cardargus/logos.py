@@ -10,7 +10,7 @@ from typing import NamedTuple, Union
 
 from ._svgparse import root_svg_tag, svg_dims, svg_geometry
 
-__all__ = ["load_svg_for_embed", "create_logo_row", "EmbeddedSvg", "LogoRow", "is_svg_file"]
+__all__ = ["load_svg_for_embed", "create_logo_row", "resolve_svg_source", "EmbeddedSvg", "LogoRow"]
 
 SvgSource = Union[str, "os.PathLike[str]"]
 
@@ -31,19 +31,71 @@ class LogoRow(NamedTuple):
     start_x: float
 
 
-def is_svg_file(src: object) -> bool:
-    """``True`` if *src* is a path (str or PathLike) to an existing file, not raw SVG markup."""
+MAX_SVG_FILE_BYTES = 16 * 1024 * 1024
+
+# Prolog allowed before the root element of SVG *markup*: BOM, whitespace, an
+# XML declaration, comments and a DOCTYPE (without an internal subset).
+_PROLOG_RE = re.compile(
+    r"""\A\ufeff?(?:\s+|<\?xml\b[^>]*\?>|<!--.*?-->|<!DOCTYPE\s[^>\[]*>)*""",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _starts_with_svg_root(text: str) -> bool:
+    """``True`` if *text*'s first element (after the prolog) is ``<svg``."""
+    rest = text[_PROLOG_RE.match(text).end() :]  # type: ignore[union-attr]
+    return re.match(r"<svg[\s>/]", rest) is not None
+
+
+def _read_svg_file(path: Path) -> str:
+    """Read an SVG file after checking it exists, is small and is really SVG."""
+    if not path.is_file():
+        raise ValueError(f"SVG file not found: {path}")
+    if path.stat().st_size > MAX_SVG_FILE_BYTES:
+        raise ValueError(f"SVG file is too large (> {MAX_SVG_FILE_BYTES} bytes): {path}")
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    if not _starts_with_svg_root(raw):
+        raise ValueError(f"File does not contain an SVG document (root element is not <svg>): {path}")
+    # Like R's readLines() + paste(collapse = "\n"): normalize EOLs, drop the final newline.
+    lines = re.split(r"\r?\n", raw)
+    if lines and lines[-1] == "":
+        lines.pop()
+    return "\n".join(lines)
+
+
+def resolve_svg_source(src: object, *, arg: str = "svg") -> tuple[str, Path | None]:
+    """Decide whether *src* is raw SVG markup or an SVG file, and return its markup.
+
+    Resolution order (no other input is ever read from disk):
+
+    1. ``os.PathLike`` (e.g. :class:`pathlib.Path`): always a file.
+    2. ``str`` whose content starts with ``<svg`` after ``lstrip()`` (an XML
+       declaration, comments or a DOCTYPE may precede it): raw markup, used
+       as-is. Markup is embedded verbatim, so it must come from a trusted
+       source.
+    3. ``str`` ending in ``.svg`` (case-insensitive): a file path.
+    4. Anything else: ``ValueError``.
+
+    A file must exist, be at most 16 MiB and have ``<svg`` as its root
+    element; otherwise ``ValueError`` is raised before anything is embedded.
+
+    Returns:
+        ``(markup, path)`` where *path* is ``None`` for raw markup.
+    """
     if isinstance(src, os.PathLike):
-        return Path(src).is_file()
-    if not isinstance(src, str):
-        return False
-    s = src.strip()
-    if not s or "<" in s or "\n" in s or len(s) > 4096:
-        return False
-    try:
-        return Path(s).is_file()
-    except (OSError, ValueError):
-        return False
+        path = Path(src)
+        return _read_svg_file(path), path
+    if isinstance(src, str):
+        stripped = src.lstrip()
+        if stripped.startswith("<") and _starts_with_svg_root(stripped):
+            return src, None
+        if stripped.lower().endswith(".svg") and "<" not in stripped and "\n" not in stripped:
+            path = Path(src.strip())
+            return _read_svg_file(path), path
+    raise ValueError(
+        f"`{arg}` must be raw SVG markup starting with '<svg', a path to an existing "
+        f"'.svg' file, or an os.PathLike; got {src!r:.80}."
+    )
 
 
 def _replace_root_tag(svg: str, new_tag: str) -> str:
@@ -66,12 +118,10 @@ def load_svg_for_embed(
     *target_width* is given).
 
     Raises:
-        ValueError: If the file does not exist.
+        ValueError: If the file does not exist, is too large, or its root
+            element is not ``<svg>``.
     """
-    path = Path(svg_path)
-    if not path.is_file():
-        raise ValueError(f"SVG file not found: {path}")
-    svg = path.read_text(encoding="utf-8", errors="replace")
+    svg = _read_svg_file(Path(svg_path))
     return embed_svg_string(svg, target_height=target_height, target_width=target_width)
 
 
@@ -147,8 +197,11 @@ def create_logo_row(
 ) -> LogoRow:
     """Lay out logos in a row, right-aligned at ``card_width - x_offset``.
 
-    Each logo may be a path to an ``.svg`` file or raw SVG markup; all are
-    scaled to *target_height*.
+    Each logo is raw SVG markup or an SVG file, resolved by
+    :func:`resolve_svg_source`; all are scaled to *target_height*.
+
+    Raises:
+        ValueError: For a logo that is neither SVG markup nor a valid SVG file.
     """
     if isinstance(logos, (str, os.PathLike)):
         logos = [logos]
@@ -158,12 +211,11 @@ def create_logo_row(
     processed: list[EmbeddedSvg] = []
     total_width = 0.0
     for logo in logos:
-        if is_svg_file(logo):
-            item = load_svg_for_embed(logo, target_height=target_height)
-        elif isinstance(logo, str):
-            item = _resize_raw_svg(logo, target_height)
+        markup, path = resolve_svg_source(logo, arg="logos")
+        if path is not None:
+            item = embed_svg_string(markup, target_height=target_height)
         else:
-            raise ValueError(f"Logos must be SVG strings or file paths, not {type(logo).__name__}.")
+            item = _resize_raw_svg(markup, target_height)
         total_width += item.width + (spacing if processed else 0)
         processed.append(item)
 

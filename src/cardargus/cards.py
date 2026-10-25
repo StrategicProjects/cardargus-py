@@ -11,9 +11,17 @@ from ._svgparse import svg_dimension
 from .badges import create_badge, css_gradient_to_svg, is_gradient
 from .fonts import str_metrics
 from .icons import icon_house
-from .logos import create_logo_row, is_svg_file, load_svg_for_embed
+from .logos import create_logo_row, embed_svg_string, resolve_svg_source
 from .themes import CardTheme, card_theme
-from .utils import as_character, escape_xml, fmt_num, generate_id, wrap_text
+from .utils import (
+    as_character,
+    escape_xml,
+    fmt_num,
+    generate_id,
+    validate_color,
+    validate_font_family,
+    wrap_text,
+)
 
 __all__ = ["svg_card"]
 
@@ -35,24 +43,28 @@ ICON_MAX_WIDTH = 50
 
 
 def _resolve_icon(with_icon: Any) -> tuple[str, float] | None:
-    """Return ``(svg, height)`` for a field's ``with_icon`` value, or ``None``."""
+    """Return ``(svg, height)`` for a field's ``with_icon`` value, or ``None``.
+
+    ``True`` gives the house icon, ``None``/``False`` no icon; anything else is
+    resolved by :func:`cardargus.logos.resolve_svg_source` (raw ``<svg``
+    markup, a ``.svg`` path, or an ``os.PathLike``) and invalid input raises
+    ``ValueError``.
+    """
     if with_icon is None or with_icon is False:
         return None
     if with_icon is True:
         return icon_house(50, 56), ICON_DEFAULT_HEIGHT
-    if isinstance(with_icon, os.PathLike) or (
-        isinstance(with_icon, str) and is_svg_file(with_icon)
-    ):
+    markup, path = resolve_svg_source(with_icon, arg="with_icon")
+    if path is not None:
         # Fit an external file into the 50 x 56 icon box (R only accepts raw SVG here).
-        probe = load_svg_for_embed(with_icon, target_height=ICON_DEFAULT_HEIGHT)
+        probe = embed_svg_string(markup, target_height=ICON_DEFAULT_HEIGHT)
         if probe.width > ICON_MAX_WIDTH:
-            h = ICON_DEFAULT_HEIGHT * ICON_MAX_WIDTH / probe.width
-            probe = load_svg_for_embed(with_icon, target_height=h)
+            probe = embed_svg_string(
+                markup, target_height=ICON_DEFAULT_HEIGHT * ICON_MAX_WIDTH / probe.width
+            )
         return probe.svg_content, probe.height
-    if isinstance(with_icon, str):
-        h = svg_dimension(with_icon, "height", prefer="attr")
-        return with_icon, (h if h is not None else ICON_DEFAULT_HEIGHT)
-    return None
+    h = svg_dimension(markup, "height", prefer="attr")
+    return markup, (h if h is not None else ICON_DEFAULT_HEIGHT)
 
 
 def _uniquify_badge_ids(svg: str, i: int) -> str:
@@ -160,6 +172,18 @@ def svg_card(
 
     Returns:
         The SVG document as a string.
+
+    Raises:
+        ValueError: For an unknown theme, an invalid color (colors must be
+            hex, named, or -- for ``bg_color`` -- a ``linear-gradient(...)``),
+            an invalid font family name, or an icon/logo that is neither SVG
+            markup nor a valid ``.svg`` file (see
+            :func:`cardargus.logos.resolve_svg_source`).
+
+    Note:
+        Text (title, labels, values, footer, alt) is XML-escaped. Raw SVG
+        markup passed as ``with_icon``/``logos`` is embedded verbatim and must
+        come from a trusted source.
     """
     # ===== THEME SUPPORT =====
     explicit = {
@@ -183,6 +207,12 @@ def svg_card(
             resolved[key] = getattr(th, key)
         else:
             resolved[key] = _DEFAULTS[key]
+    # User values land in SVG attributes and in <style>: validate them all.
+    for key, value in resolved.items():
+        if key == "font":
+            validate_font_family(value, arg="font")
+        else:
+            validate_color(value, arg=key, allow_gradient=(key == "bg_color"))
     bg_color = resolved["bg_color"]
     font = resolved["font"]
     title_color = resolved["title_color"]

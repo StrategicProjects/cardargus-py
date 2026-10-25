@@ -7,7 +7,15 @@ import re
 from typing import Any, NamedTuple
 
 from .fonts import str_metrics
-from .utils import as_character, escape_xml, fmt_num, generate_id, is_light_color
+from .utils import (
+    as_character,
+    escape_xml,
+    fmt_num,
+    generate_id,
+    is_light_color,
+    validate_color,
+    validate_font_family,
+)
 
 __all__ = ["create_badge", "Badge", "css_gradient_to_svg", "is_gradient"]
 
@@ -109,7 +117,15 @@ def create_badge(
         height: Half of the badge height; defaults to the ink height of the
             taller text (the badge is twice as tall as the text).
         as_string: Return only the SVG string (default) or a :class:`Badge`.
+
+    Raises:
+        ValueError: If *color* is not a hex/named color or a
+            ``linear-gradient(...)``, or *font* is not a valid family name.
     """
+    color = validate_color(color, arg="color", allow_gradient=True)
+    font = validate_font_family(font)
+    style_attr = escape_xml(style)
+    class_attr = escape_xml(css_class)
     label_s = as_character(label)
     value_s = as_character(value)
     id_suffix = generate_id(label_s, value_s, color)
@@ -147,7 +163,7 @@ def create_badge(
     cr = fmt_num(corner_radius)
     so = shadow_offset
 
-    svg = f"""<svg class="{css_class}" style="{style}" xmlns="http://www.w3.org/2000/svg" width="{tw}" height="{fh}" role="img" aria-label="{el}: {ev}">
+    svg = f"""<svg class="{class_attr}" style="{style_attr}" xmlns="http://www.w3.org/2000/svg" width="{tw}" height="{fh}" role="img" aria-label="{el}: {ev}">
       <title>{el}: {ev}</title>
       {defs_block}
       <linearGradient id="s{id_suffix}" x2="0" y2="100%">

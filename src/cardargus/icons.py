@@ -7,7 +7,15 @@ SVG string or ``.svg`` file path) can be used as a field's ``with_icon`` in
 
 from __future__ import annotations
 
-from .utils import fmt_num
+from .utils import fmt_num, validate_color
+
+
+def _colors(stroke_color: str, fill: str) -> tuple[str, str]:
+    """Validate icon colors (they are interpolated into SVG attributes)."""
+    return (
+        validate_color(stroke_color, arg="stroke_color", allow_none=True),
+        validate_color(fill, arg="fill", allow_none=True),
+    )
 
 __all__ = ["icon_house", "icon_building", "icon_construction", "icon_map_pin", "icon_money"]
 
@@ -60,6 +68,7 @@ def icon_house(
     fill: str = "none",
 ) -> str:
     """House/home outline icon (the default ``with_icon=True`` icon)."""
+    stroke_color, fill = _colors(stroke_color, fill)
     w, h, sw = fmt_num(width), fmt_num(height), fmt_num(stroke_width)
     return (
         f'<svg width="{w}" height="{h}" viewBox="0 0 572 564" fill="{fill}" xmlns="http://www.w3.org/2000/svg">\n'
@@ -77,7 +86,7 @@ def icon_building(
 ) -> str:
     """Building/apartment icon."""
     w, h, sw = fmt_num(width), fmt_num(height), fmt_num(stroke_width)
-    s, f = stroke_color, fill
+    s, f = _colors(stroke_color, fill)
     return f"""<svg width="{w}" height="{h}" viewBox="0 0 50 56" fill="{f}" xmlns="http://www.w3.org/2000/svg">
       <rect x="5" y="10" width="40" height="44" stroke="{s}" stroke-width="{sw}" fill="{f}"/>
       <rect x="10" y="16" width="8" height="8" stroke="{s}" stroke-width="1" fill="{f}"/>
@@ -99,7 +108,7 @@ def icon_construction(
 ) -> str:
     """Construction crane icon."""
     w, h, sw = fmt_num(width), fmt_num(height), fmt_num(stroke_width)
-    s, f = stroke_color, fill
+    s, f = _colors(stroke_color, fill)
     return f"""<svg width="{w}" height="{h}" viewBox="0 0 50 56" fill="{f}" xmlns="http://www.w3.org/2000/svg">
       <!-- Base -->
       <rect x="20" y="48" width="10" height="6" stroke="{s}" stroke-width="{sw}" fill="{f}"/>
@@ -129,7 +138,7 @@ def icon_map_pin(
 ) -> str:
     """Map pin / location icon."""
     w, h, sw = fmt_num(width), fmt_num(height), fmt_num(stroke_width)
-    s, f = stroke_color, fill
+    s, f = _colors(stroke_color, fill)
     return f"""<svg width="{w}" height="{h}" viewBox="0 0 50 56" fill="{f}" xmlns="http://www.w3.org/2000/svg">
       <path d="M25 4 C14 4 6 12 6 22 C6 35 25 52 25 52 C25 52 44 35 44 22 C44 12 36 4 25 4 Z" 
             stroke="{s}" stroke-width="{sw}" fill="{f}"/>
@@ -146,7 +155,7 @@ def icon_money(
 ) -> str:
     """Dollar/money icon."""
     w, h, sw = fmt_num(width), fmt_num(height), fmt_num(stroke_width)
-    s, f = stroke_color, fill
+    s, f = _colors(stroke_color, fill)
     return f"""<svg width="{w}" height="{h}" viewBox="0 0 50 56" fill="{f}" xmlns="http://www.w3.org/2000/svg">
       <circle cx="25" cy="28" r="20" stroke="{s}" stroke-width="{sw}" fill="{f}"/>
       <text x="25" y="35" font-family="Arial, sans-serif" font-size="24" font-weight="bold" 

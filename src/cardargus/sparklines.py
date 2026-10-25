@@ -7,6 +7,8 @@ from collections.abc import Iterable
 from numbers import Real
 from typing import Literal
 
+from .utils import validate_color
+
 __all__ = ["create_sparkline"]
 
 SparklineType = Literal["line", "area", "bar"]
@@ -72,11 +74,12 @@ def create_sparkline(
         An ``<svg>`` string with ``aria-hidden="true"``.
 
     Raises:
-        ValueError: For invalid values, too few points, an unknown type or
-            non-positive dimensions.
+        ValueError: For invalid values, too few points, an unknown type,
+            non-positive dimensions or an invalid color.
     """
     if type not in _TYPES:
         raise ValueError(f"`type` must be one of {', '.join(map(repr, _TYPES))}, not {type!r}.")
+    color = validate_color(color, arg="color")
     vals = _validate_values(values)
     min_points = 1 if type == "bar" else 2
     if len(vals) < min_points:
@@ -84,6 +87,9 @@ def create_sparkline(
         raise ValueError(f"A {type!r} sparkline needs at least {min_points} value{plural}.")
     if not (_positive(width) and _positive(height)):
         raise ValueError("`width` and `height` must be positive numbers.")
+    for name, num in (("stroke_width", stroke_width), ("fill_opacity", fill_opacity), ("padding", padding)):
+        if isinstance(num, bool) or not isinstance(num, Real):
+            raise ValueError(f"`{name}` must be a number.")
 
     n = len(vals)
     inner_w = width - 2 * padding
