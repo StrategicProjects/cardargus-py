@@ -1,5 +1,10 @@
 # cardargus (Python)
 
+[![PyPI](https://img.shields.io/pypi/v/cardargus.svg)](https://pypi.org/project/cardargus/)
+[![Python](https://img.shields.io/pypi/pyversions/cardargus.svg)](https://pypi.org/project/cardargus/)
+[![tests](https://github.com/StrategicProjects/cardargus-py/actions/workflows/test.yml/badge.svg)](https://github.com/StrategicProjects/cardargus-py/actions/workflows/test.yml)
+[![DOI](https://zenodo.org/badge/1433712041.svg)](https://zenodo.org/badge/latestdoi/1433712041)
+
 Generate **self-contained SVG information cards** with embedded Google Fonts,
 shields.io-style badges, sparklines, icons and logos, from Python.
 
