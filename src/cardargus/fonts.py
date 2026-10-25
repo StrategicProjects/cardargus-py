@@ -250,9 +250,18 @@ def _pick_face(faces: Sequence[_FontFace], fmt: str) -> _FontFace | None:
 
 
 def _valid_font_bytes(data: bytes) -> bool:
-    if len(data) < 1000:
+    """Accept only data that fontTools can open as a font (not an HTML error page)."""
+    if data[:4] not in (b"wOF2", b"wOFF", b"\x00\x01\x00\x00", b"OTTO", b"true"):
         return False
-    return data[:4] in (b"wOF2", b"wOFF", b"\x00\x01\x00\x00", b"OTTO", b"true")
+    try:
+        import io
+
+        from fontTools.ttLib import TTFont
+
+        TTFont(io.BytesIO(data), lazy=True)["head"]
+    except Exception:  # noqa: BLE001
+        return False
+    return True
 
 
 def _write_atomic(path: Path, data: bytes) -> None:

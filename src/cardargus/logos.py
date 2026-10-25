@@ -89,8 +89,9 @@ def resolve_svg_source(src: object, *, arg: str = "svg") -> tuple[str, Path | No
         stripped = src.lstrip()
         if stripped.startswith("<") and _starts_with_svg_root(stripped):
             return src, None
-        if stripped.lower().endswith(".svg") and "<" not in stripped and "\n" not in stripped:
-            path = Path(src.strip())
+        candidate = stripped.rstrip()
+        if candidate.lower().endswith(".svg") and "<" not in candidate and "\n" not in candidate:
+            path = Path(candidate)
             return _read_svg_file(path), path
     raise ValueError(
         f"`{arg}` must be raw SVG markup starting with '<svg', a path to an existing "
