@@ -1,0 +1,45 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "cardargus: Generate SVG Information Cards with Embedded Fonts and Badges (Python)"
+abstract: >-
+  Create self-contained SVG information cards with embedded Google Fonts,
+  shields-style badges, sparklines and custom logos. Python port of the R
+  package cardargus.
+type: software
+version: 0.1.0
+date-released: "2026-10-25"
+license: MIT
+repository-code: "https://github.com/StrategicProjects/cardargus-py"
+url: "https://github.com/StrategicProjects/cardargus"
+keywords:
+  - svg
+  - cards
+  - badges
+  - sparklines
+  - google-fonts
+  - dashboards
+authors:
+  - given-names: "André"
+    family-names: "Leite"
+    email: "leite@castlab.org"
+    orcid: "https://orcid.org/0000-0002-4718-9766"
+  - given-names: "Marcos"
+    family-names: "Wasiliew"
+    email: "marcos.wasiliew@gmail.com"
+    orcid: "https://orcid.org/0009-0004-4694-3159"
+  - given-names: "Hugo"
+    family-names: "Vasconcelos"
+    email: "hugo.vasconcelos@ufpe.br"
+    orcid: "https://orcid.org/0000-0001-6249-0920"
+  - given-names: "Carlos"
+    family-names: "Amorim"
+    email: "carlos.agaf@ufpe.br"
+    orcid: "https://orcid.org/0000-0001-6315-8305"
+  - given-names: "Diogo"
+    family-names: "Bezerra"
+    email: "diogo.bezerra@ufpe.br"
+    orcid: "https://orcid.org/0000-0002-1216-8674"
+  - given-names: "Júlia"
+    family-names: "Nascimento Barreto"
+    email: "juliabarreto@gd.seplag.pe.gov.br"
+    orcid: "https://orcid.org/0009-0004-2851-7770"

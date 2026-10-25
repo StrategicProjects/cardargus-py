@@ -1,0 +1,23 @@
+{
+  "title": "cardargus: Generate SVG Information Cards with Embedded Fonts and Badges (Python)",
+  "description": "Create self-contained SVG information cards with embedded Google Fonts, shields-style badges, sparklines and custom logos. Python port of the R package cardargus (https://github.com/StrategicProjects/cardargus).",
+  "upload_type": "software",
+  "version": "0.1.0",
+  "license": "MIT",
+  "keywords": ["svg", "cards", "badges", "sparklines", "google-fonts", "dashboards", "python"],
+  "creators": [
+    {"name": "Leite, André", "orcid": "0000-0002-4718-9766"},
+    {"name": "Wasiliew, Marcos", "orcid": "0009-0004-4694-3159"},
+    {"name": "Vasconcelos, Hugo", "orcid": "0000-0001-6249-0920"},
+    {"name": "Amorim, Carlos", "orcid": "0000-0001-6315-8305"},
+    {"name": "Bezerra, Diogo", "orcid": "0000-0002-1216-8674"},
+    {"name": "Nascimento Barreto, Júlia", "orcid": "0009-0004-2851-7770"}
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/StrategicProjects/cardargus",
+      "relation": "isDerivedFrom",
+      "scheme": "url"
+    }
+  ]
+}
