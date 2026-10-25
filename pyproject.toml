@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cardargus"
+version = "0.1.0"
+description = "Generate self-contained SVG information cards with embedded Google Fonts, shields-style badges, sparklines and logos."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "André Leite", email = "leite@castlab.org" },
+    { name = "Marcos Wasiliew", email = "marcos.wasiliew@gmail.com" },
+    { name = "Hugo Vasconcelos", email = "hugo.vasconcelos@ufpe.br" },
+    { name = "Carlos Amorim", email = "carlos.agaf@ufpe.br" },
+    { name = "Diogo Bezerra", email = "diogo.bezerra@ufpe.br" },
+    { name = "Júlia Nascimento Barreto", email = "juliabarreto@gd.seplag.pe.gov.br" },
+]
+maintainers = [
+    { name = "André Leite", email = "leite@castlab.org" },
+]
+keywords = ["svg", "cards", "badges", "dashboard", "sparkline", "google-fonts", "infographics"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Typing :: Typed",
+]
+dependencies = [
+    "fonttools>=4.50",
+    "brotli",
+    "platformdirs",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.urls]
+Homepage = "https://github.com/StrategicProjects/cardargus-py"
+"R package" = "https://github.com/StrategicProjects/cardargus"
+Issues = "https://github.com/StrategicProjects/cardargus-py/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cardargus"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/cardargus", "tests", "examples/*.py", "README.md", "LICENSE", "CITATION.cff"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
