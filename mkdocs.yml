@@ -1,0 +1,60 @@
+site_name: cardargus
+site_description: Self-contained SVG information cards with embedded Google Fonts, badges, themes and sparklines
+site_url: https://strategicprojects.github.io/cardargus-py/
+repo_url: https://github.com/StrategicProjects/cardargus-py
+repo_name: StrategicProjects/cardargus-py
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: amber
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: amber
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+
+nav:
+  - Home: index.md
+  - Theme Gallery: gallery.md
+  - API Reference: api.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: false
+            show_root_heading: true
+            separate_signature: true
+            show_signature_annotations: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.snippets:
+      check_paths: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/cardargus/
+    - icon: fontawesome/brands/r-project
+      link: https://strategicprojects.github.io/cardargus/

@@ -20,3 +20,6 @@ examples/output/
 
 # OS
 .DS_Store
+
+# MkDocs build output
+site/
