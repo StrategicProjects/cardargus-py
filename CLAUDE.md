@@ -11,7 +11,8 @@ SVG** — o R é a implementação de referência; mudança visual aqui precisa 
 contraparte lá (ou registro consciente da divergência no README, seção
 "Differences from R").
 
-- PyPI: `cardargus` (v0.1.0, lançado 2026-10-25)
+- PyPI: `cardargus` (v0.1.1, lançada 2026-10-27 — port do fix #29 do R,
+  cobertura não-latin; v0.1.0 em 2026-10-25)
 - Site: https://strategicprojects.github.io/cardargus-py/
 - DOI Zenodo: 10.5281/zenodo.23652572 (badge via repo id 1433712041)
 
@@ -47,7 +48,7 @@ contraparte lá (ou registro consciente da divergência no README, seção
 ## Dev / test / release
 
 - venv: `.venv` (`uv venv .venv && uv pip install -e ".[dev]" --python .venv/bin/python`).
-- Testes: `.venv/bin/python -m pytest` — **140 testes, todos offline** (rede é
+- Testes: `.venv/bin/python -m pytest` — **156 testes, todos offline** (rede é
   mockada; fonte sintética via FontBuilder para métricas/subset exatos).
 - Galeria de validação: `.venv/bin/python examples/gallery.py` →
   `examples/output/` (gitignored). Compare com
@@ -63,6 +64,16 @@ contraparte lá (ou registro consciente da divergência no README, seção
   `publish.yml` publica no PyPI via **Trusted Publishing** (environment
   `pypi`, sem token) e o Zenodo arquiva com DOI novo. CI de testes:
   `test.yml` (3.10/3.12/3.14).
+
+## Estado (pausa em 2026-10-27)
+
+v0.1.1 lançada e verificada (PyPI via Trusted Publishing, install limpo OK,
+CI verde). Nada em aberto. Próxima mudança visual do R a espelhar: nenhuma
+pendente — a 0.3.1 do R (fixes #27/#29) não muda o SVG gerado, só o
+embedding de fontes, cujo equivalente aqui já está feito (ver `fonts.py`
+acima). Release notes da v0.1.1 orientam usuários da 0.1.0 com texto
+não-latin a limpar o cache de fontes (arquivos antigos sem proveniência
+`.gsubsets` não fazem upgrade).
 
 ## Roadmap (fase 2, não iniciado)
 
