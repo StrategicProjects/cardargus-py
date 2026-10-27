@@ -421,3 +421,129 @@ def test_save_svg_upgrades_embedded_font(monkeypatch, tmp_path):
     out = save_svg(svg, tmp_path / "card.svg")
     embedded = _embedded_font(out.read_text(encoding="utf-8"))
     assert ord("Ł") in embedded.getBestCmap()
+
+
+def test_subset_font_does_not_cache_poisoned_subsets(monkeypatch, tmp_path):
+    # Upgrade impossible (network down): subset_font must NOT cache a subset
+    # missing the glyphs; once the network is back, the subset covers them.
+    dest = _seed_partial_latin_font(tmp_path)
+
+    def down(*a, **k):
+        raise OSError("network down")
+
+    monkeypatch.setenv("CARDARGUS_OFFLINE", "0")
+    monkeypatch.setattr(fonts, "_http_get", down)
+    charset = fonts.font_subset_charset("Łód")
+    assert fonts.subset_font("Upfam", charset) is None
+    assert not fonts.font_cache_path("Upfam", charset).is_file()
+
+    # Network restored (fresh process simulated by clearing module state).
+    fonts._FAMILY_BLOCKS.clear()
+    fonts._UPGRADE_ATTEMPTED.clear()
+    calls: list[str] = []
+    _upgrade_http_mock(monkeypatch, tmp_path, calls)
+    sub = fonts.subset_font("Upfam", charset)
+    assert sub is not None
+    assert ord("Ł") in TTFont(str(sub), lazy=True).getBestCmap()
+
+
+def test_subset_font_rebuilds_a_poisoned_cached_subset(monkeypatch, tmp_path):
+    # A poisoned subset cached by an older version (or a crashed run) is
+    # detected via its cmap and rebuilt after the upgrade.
+    dest = _seed_partial_latin_font(tmp_path)
+    charset = fonts.font_subset_charset("Łód")
+    poisoned = fonts.font_cache_path("Upfam", charset)
+    poisoned.write_bytes(dest.read_bytes())  # latin-only bytes: no Ł
+
+    calls: list[str] = []
+    _upgrade_http_mock(monkeypatch, tmp_path, calls)
+    sub = fonts.subset_font("Upfam", charset)
+    assert sub == poisoned
+    assert ord("Ł") in TTFont(str(sub), lazy=True).getBestCmap()
+
+
+def test_subset_of_complete_font_with_missing_glyphs_stays_cached(test_font, monkeypatch):
+    # A local font that genuinely lacks a glyph: the subset is still cached
+    # and served (no rebuild churn, no network).
+    monkeypatch.setenv("CARDARGUS_OFFLINE", "0")
+
+    def boom(*a, **k):  # pragma: no cover
+        raise AssertionError("network access attempted")
+
+    monkeypatch.setattr(fonts, "_http_get", boom)
+    charset = fonts.font_subset_charset("AbŁ")
+    first = fonts.subset_font("TestSans", charset)
+    assert first is not None
+    assert fonts.subset_font("TestSans", charset) == first
+
+
+def test_prepare_svg_upgrades_only_the_family_that_needs_it(monkeypatch, tmp_path):
+    from cardargus.conversion import prepare_svg
+
+    _seed_partial_latin_font(tmp_path, family="Upfam")
+    other = _seed_partial_latin_font(tmp_path, family="Other")
+
+    calls: list[str] = []
+    _upgrade_http_mock(monkeypatch, tmp_path, calls)
+
+    svg = (
+        "<svg xmlns='http://www.w3.org/2000/svg'>"
+        "<text font-family='Upfam'>Łódź</text>"
+        "<text font-family='Other'>Hello</text></svg>"
+    )
+    prepare_svg(svg)
+    # Upfam upgraded; Other untouched (small woff2 kept, zero network for it).
+    assert (fonts.font_cache_dir() / "Upfam.ttf").is_file()
+    assert other.is_file()
+    assert not any("Other" in url for url in calls)
+
+
+def test_transient_network_failure_is_retried(monkeypatch, tmp_path):
+    dest = _seed_partial_latin_font(tmp_path)
+
+    def down(*a, **k):
+        raise OSError("network down")
+
+    monkeypatch.setenv("CARDARGUS_OFFLINE", "0")
+    monkeypatch.setattr(fonts, "_http_get", down)
+    assert fonts.ensure_font_for_text("Upfam", "Ł") == dest
+
+    # Same process, network back: the upgrade is NOT permanently disabled.
+    calls: list[str] = []
+    _upgrade_http_mock(monkeypatch, tmp_path, calls)
+    path = fonts.ensure_font_for_text("Upfam", "Ł")
+    assert path is not None and path.name == "Upfam.ttf"
+
+
+def test_uncoverable_glyphs_fetch_css2_once_per_family(monkeypatch, tmp_path):
+    _seed_partial_latin_font(tmp_path)
+    calls: list[str] = []
+    _upgrade_http_mock(monkeypatch, tmp_path, calls)
+
+    # Three distinct Cyrillic texts: the CSS2 block table is per family,
+    # so only one network round-trip happens.
+    for txt in ("Д", "Ж", "Фа"):
+        fonts.ensure_font_for_text("Upfam", txt)
+    assert sum("css2" in url for url in calls) == 1
+
+
+def test_numbered_cjk_slices_are_not_coverage(monkeypatch, tmp_path):
+    dest = _seed_partial_latin_font(tmp_path)
+    css2_cjk = """
+/* [3] */
+@font-face {
+  font-family: 'Upfam';
+  src: url(https://fonts.gstatic.com/s/upfam/slice3.woff2) format('woff2');
+  unicode-range: U+4E00-4FFF;
+}
+"""
+
+    def fake_get(url, ua, timeout=15.0):
+        if "css2" in url:
+            return css2_cjk.encode()
+        raise AssertionError(f"unexpected URL {url}")
+
+    monkeypatch.setenv("CARDARGUS_OFFLINE", "0")
+    monkeypatch.setattr(fonts, "_http_get", fake_get)
+    # The legacy subset= endpoint cannot serve numbered slices: no download.
+    assert fonts.ensure_font_for_text("Upfam", "中") == dest

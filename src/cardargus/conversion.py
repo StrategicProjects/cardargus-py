@@ -12,7 +12,7 @@ import warnings
 from pathlib import Path
 
 from . import fonts as _fonts
-from ._svgparse import svg_font_families, svg_text_content
+from ._svgparse import svg_font_families, svg_text_by_family, svg_text_content
 
 __all__ = ["save_svg", "sanitize_svg", "embed_svg_fonts", "prepare_svg"]
 
@@ -101,20 +101,32 @@ def prepare_svg(svg: str, subset_fonts: bool = False) -> str:
 
     # The charset drives subsetting AND coverage: a cached Google font only
     # spans the latin block, and ensure_font_for_text() upgrades it when the
-    # SVG text needs more (R package issue #29).
+    # SVG text needs more (R package issue #29). Coverage is checked PER
+    # FAMILY (text whose family cannot be resolved counts for every family),
+    # so a family whose own text is latin keeps its small WOFF2.
     charset_all = _fonts.font_subset_charset(svg_text_content(s))
-    charset = charset_all if subset_fonts else None
+
+    by_family = svg_text_by_family(s) if charset_all else None
+
+    def _family_charset(fam: str) -> str | None:
+        if by_family is None:
+            return charset_all  # unparseable SVG: conservative global attribution
+        return _fonts.font_subset_charset(
+            by_family.get(fam, "") + by_family.get(".unresolved", "")
+        )
+
     for fam in families:
+        fam_charset = _family_charset(fam)
         path = None
-        if charset:
-            path = _fonts.subset_font(fam, charset)
+        if subset_fonts and fam_charset:
+            path = _fonts.subset_font(fam, fam_charset)
             if path is None and _fonts.ensure_font(fam) is not None:
                 warnings.warn(
                     f"Could not build a subset of font {fam!r}; embedding the full font.",
                     stacklevel=3,
                 )
         if path is None:
-            path = _fonts.ensure_font_for_text(fam, charset_all)
+            path = _fonts.ensure_font_for_text(fam, fam_charset)
         if path is None:
             warnings.warn(
                 f"Font {fam!r} could not be embedded; renderers may use a fallback font.",

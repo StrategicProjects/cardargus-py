@@ -306,10 +306,34 @@ def _write_provenance(path: Path, subsets: Sequence[str]) -> None:
         pass
 
 
+_GLYPH_SUBSET_RE_TMPL = r"_sub[0-9a-f]{10}\.woff2"
+
+
 def _drop_glyph_subsets(family: str) -> None:
     """Delete cached ``_sub<hash>`` files (artifacts derived from the full font)."""
-    for p in font_cache_dir().glob(f"{_family_key(family)}_sub*.woff2"):
-        p.unlink(missing_ok=True)
+    pat = re.compile(re.escape(_family_key(family)) + _GLYPH_SUBSET_RE_TMPL)
+    for p in font_cache_dir().iterdir():
+        if pat.fullmatch(p.name):
+            p.unlink(missing_ok=True)
+
+
+#: cmap code points per font file, so repeated coverage checks do not reopen
+#: (and, for WOFF2, re-decompress) the font. Cleared with the metrics cache.
+_CMAPS: dict[str, frozenset[int]] = {}
+
+
+def _cmap_codepoints(path: Path) -> frozenset[int] | None:
+    key = str(path)
+    hit = _CMAPS.get(key)
+    if hit is None:
+        try:
+            from fontTools.ttLib import TTFont
+
+            hit = frozenset(TTFont(key, lazy=True).getBestCmap() or {})
+        except Exception:  # noqa: BLE001 - unreadable font
+            return None
+        _CMAPS[key] = hit
+    return hit
 
 
 def _unmapped_chars(path: Path, text: str) -> str:
@@ -317,35 +341,68 @@ def _unmapped_chars(path: Path, text: str) -> str:
     chars = sorted({ch for ch in text if ord(ch) > 0x7F})
     if not chars:
         return ""
-    try:
-        from fontTools.ttLib import TTFont
-
-        cmap = TTFont(str(path), lazy=True).getBestCmap() or {}
-    except Exception:  # noqa: BLE001 - unreadable font: nothing to upgrade
+    cmap = _cmap_codepoints(path)
+    if cmap is None:
         return ""
     return "".join(ch for ch in chars if ord(ch) not in cmap)
 
 
-def _subsets_covering(family: str, chars: str) -> list[str]:
-    """Google subset names whose ``unicode-range`` covers any of *chars*.
+#: Parsed CSS2 blocks per family (name + unicode-range). Only conclusive
+#: answers are cached: a network failure is not recorded, so it is retried.
+_FAMILY_BLOCKS: dict[str, list[_FontFace]] = {}
 
-    Queried from the CSS2 response (one ``/* name */`` block per script).
-    Returns an empty list when the family has no block for those characters
-    (the glyphs genuinely do not exist in the font) or on network failure.
-    """
+#: Google subset names look like "latin", "latin-ext", "vietnamese"; CJK
+#: families use numbered slices ("[3]") the legacy subset= endpoint cannot
+#: serve, so those are not considered coverage.
+_SUBSET_NAME_RE = re.compile(r"[a-z][a-z-]*\Z")
+
+
+def _family_css2_blocks(family: str) -> list[_FontFace] | None:
+    """The family's named CSS2 blocks, cached per process; ``None`` = network failure."""
+    if family in _FAMILY_BLOCKS:
+        return _FAMILY_BLOCKS[family]
     fam = urllib.parse.quote_plus(family)
     url = f"https://fonts.googleapis.com/css2?family={fam}:wght@400&display=swap"
     try:
         css = _http_get(url, CHROME_USER_AGENT).decode("utf-8", "replace")
-    except Exception:  # noqa: BLE001
-        return []
+    except Exception:  # noqa: BLE001 - transient: do not cache, retry later
+        return None
+    blocks = [
+        face
+        for face in _parse_font_faces(css)
+        if face.subset is not None
+        and face.unicode_range is not None
+        and _SUBSET_NAME_RE.fullmatch(face.subset)
+    ]
+    _FAMILY_BLOCKS[family] = blocks
+    return blocks
+
+
+def _subsets_covering(family: str, chars: str) -> list[str] | None:
+    """Google subset names whose ``unicode-range`` covers any of *chars*.
+
+    Returns an empty list when the family has no block for those characters
+    (the glyphs genuinely do not exist in the font) and ``None`` on network
+    failure, so callers can retry transient failures later.
+    """
+    blocks = _family_css2_blocks(family)
+    if blocks is None:
+        return None
     names: list[str] = []
-    for face in _parse_font_faces(css):
-        if face.subset is None or face.unicode_range is None or face.subset in names:
+    for face in blocks:
+        if face.subset in names:
             continue
         if any(_range_contains(face.unicode_range, ord(ch)) for ch in chars):
             names.append(face.subset)
     return names
+
+
+def _forget_family(family: str) -> None:
+    """Drop per-family download/upgrade memos so the next call tries again."""
+    _FAILED_FAMILIES.discard(family)
+    _FAMILY_BLOCKS.pop(family, None)
+    for memo in [m for m in _UPGRADE_ATTEMPTED if m[0] == family]:
+        _UPGRADE_ATTEMPTED.discard(memo)
 
 
 def _download_merged_ttf(family: str, subsets: Sequence[str]) -> bytes | None:
@@ -403,28 +460,35 @@ def ensure_font_for_text(
         return path
     if not download or not _downloads_enabled():
         return path
-    memo = (family, missing)
+
+    covering = _subsets_covering(family, missing)
+    if covering is None:
+        return path  # network failure: nothing memoized, retried next call
+    needed = [s for s in covering if s not in subsets]
+    if not needed:
+        return path  # the family has no block for those glyphs (cheap: blocks cached)
+
+    want = list(dict.fromkeys(["latin", *subsets, *needed]))
+    memo = (family, ",".join(want))
     if memo in _UPGRADE_ATTEMPTED:
         return path
     _UPGRADE_ATTEMPTED.add(memo)
 
-    needed = [s for s in _subsets_covering(family, missing) if s not in subsets]
-    if not needed:
-        return path  # the family has no block for those glyphs (or offline)
-
-    want = list(dict.fromkeys(["latin", *subsets, *needed]))
     data = _download_merged_ttf(family, want)
     if data is None:
-        return path
+        return path  # memoized: one failed merged download per subset set
 
     new = font_cache_dir() / f"{_family_key(family)}.ttf"
     _write_atomic(new, data)
     _write_provenance(new, want)
     if new != path:
         # Replacing our own partial CSS-API download (provenance proven by
-        # the sidecar); never reached for local fonts.
-        _provenance_sidecar(path).unlink(missing_ok=True)
+        # the sidecar); never reached for local fonts. The font file goes
+        # first: if we die between the unlinks, a dangling sidecar is inert,
+        # while a sidecar-less partial font would be mistaken for a complete
+        # local font and shadow the merged TTF forever.
         path.unlink(missing_ok=True)
+        _provenance_sidecar(path).unlink(missing_ok=True)
     _drop_glyph_subsets(family)  # derived from the old, narrower file
     _clear_metrics_cache()
     return new
@@ -541,7 +605,7 @@ def install_fonts(
         fonts = [fonts]
     results: dict[str, bool] = {}
     for fam in fonts:
-        _FAILED_FAMILIES.discard(fam)
+        _forget_family(fam)
         cached = _cached_full_font(fam)
         path = cached or download_google_font(fam)
         if path is not None:
@@ -600,7 +664,7 @@ def register_font(path: str | os.PathLike[str], family: str | None = None) -> Pa
         _provenance_sidecar(candidate).unlink(missing_ok=True)
     shutil.copyfile(src, out)
     _drop_glyph_subsets(family)
-    _FAILED_FAMILIES.discard(family)
+    _forget_family(family)
     _clear_metrics_cache()
     return out
 
@@ -623,11 +687,23 @@ def subset_font(family: str, charset: str, download: bool = True) -> Path | None
         return None
     out = font_cache_path(family, charset)
     if out.is_file():
-        return out
+        if not _unmapped_chars(out, charset):
+            return out
+        cur = _cached_full_font(family)
+        if cur is not None and _read_provenance(cur) is None:
+            # The complete/local font lacks those glyphs too: the cached
+            # subset is the best possible, keep serving it.
+            return out
+        # Subset poisoned by a failed coverage upgrade: rebuild it below.
     # ensure_font_for_text: a partial latin-only block would silently produce
     # a subset MISSING the non-latin glyphs (R package issue #29).
     full = ensure_font_for_text(family, charset, download=download)
     if full is None:
+        return None
+    if _unmapped_chars(full, charset) and _read_provenance(full) is not None:
+        # The coverage upgrade did not happen (network?): do NOT cache a
+        # subset missing the glyphs -- fall back to the full font and let a
+        # later call retry the upgrade.
         return None
     try:
         from fontTools import subset as ft_subset
@@ -701,6 +777,7 @@ _WARNED: set[str] = set()
 def _clear_metrics_cache() -> None:
     _MEASURERS.clear()
     _WARNED.clear()
+    _CMAPS.clear()
 
 
 def _measurer(family: str) -> _FontMeasurer | None:

@@ -63,6 +63,7 @@ def _reset_font_state() -> None:
     fonts._clear_metrics_cache()
     fonts._FAILED_FAMILIES.clear()
     fonts._UPGRADE_ATTEMPTED.clear()
+    fonts._FAMILY_BLOCKS.clear()
 
 
 @pytest.fixture(autouse=True)
