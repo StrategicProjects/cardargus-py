@@ -24,7 +24,7 @@ from .sparklines import create_sparkline
 from .themes import CardTheme, card_theme, card_themes
 from .utils import compress_number, escape_xml, is_light_color
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "Badge",
