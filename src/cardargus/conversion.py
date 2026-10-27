@@ -99,7 +99,11 @@ def prepare_svg(svg: str, subset_fonts: bool = False) -> str:
     if not families:
         return s
 
-    charset = _fonts.font_subset_charset(svg_text_content(s)) if subset_fonts else None
+    # The charset drives subsetting AND coverage: a cached Google font only
+    # spans the latin block, and ensure_font_for_text() upgrades it when the
+    # SVG text needs more (R package issue #29).
+    charset_all = _fonts.font_subset_charset(svg_text_content(s))
+    charset = charset_all if subset_fonts else None
     for fam in families:
         path = None
         if charset:
@@ -110,7 +114,7 @@ def prepare_svg(svg: str, subset_fonts: bool = False) -> str:
                     stacklevel=3,
                 )
         if path is None:
-            path = _fonts.ensure_font(fam)
+            path = _fonts.ensure_font_for_text(fam, charset_all)
         if path is None:
             warnings.warn(
                 f"Font {fam!r} could not be embedded; renderers may use a fallback font.",

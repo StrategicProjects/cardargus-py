@@ -233,3 +233,191 @@ def test_sanitize_removes_editor_metadata_and_imports():
     out = sanitize_svg(svg)
     assert "sodipodi" not in out and "inkscape" not in out and "metadata" not in out
     assert "@import" not in out
+
+
+# ---- latin-ext coverage upgrade (R package issue #29) -----------------------
+
+CSS2_WITH_LATIN_EXT = """
+/* latin-ext */
+@font-face {
+  font-family: 'Upfam';
+  src: url(https://fonts.gstatic.com/s/upfam/latin-ext.woff2) format('woff2');
+  unicode-range: U+0100-024F, U+1E00-1EFF;
+}
+/* latin */
+@font-face {
+  font-family: 'Upfam';
+  src: url(https://fonts.gstatic.com/s/upfam/latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+2000-206F;
+}
+"""
+
+MERGED_CSS = """
+@font-face {
+  font-family: 'Upfam';
+  src: url(https://fonts.gstatic.com/s/upfam/merged.ttf) format('truetype');
+}
+"""
+
+EXTENDED_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz Łódź"
+
+
+def _seed_partial_latin_font(tmp_path, family="Upfam"):
+    """Cache a latin-only woff2 with CSS-API provenance, as 'downloaded'."""
+    ttf = build_test_font(tmp_path / "latin.ttf", family=family)
+    f = TTFont(str(ttf))
+    f.flavor = "woff2"
+    buf = io.BytesIO()
+    f.save(buf)
+    dest = font_cache_dir() / f"{family}.woff2"
+    dest.write_bytes(buf.getvalue())
+    fonts._write_provenance(dest, ["latin"])
+    return dest
+
+
+def _merged_ttf_bytes(tmp_path, family="Upfam"):
+    return build_test_font(tmp_path / "merged.ttf", family=family, chars=EXTENDED_CHARS).read_bytes()
+
+
+def _upgrade_http_mock(monkeypatch, tmp_path, calls):
+    merged = _merged_ttf_bytes(tmp_path)
+
+    def fake_get(url, ua, timeout=15.0):
+        calls.append(url)
+        if "css2?family=Upfam" in url:
+            assert "Chrome" in ua
+            return CSS2_WITH_LATIN_EXT.encode()
+        if "css?family=Upfam" in url and "subset=" in url:
+            assert ua == fonts.PLAIN_USER_AGENT
+            assert "subset=latin,latin-ext" in url
+            return MERGED_CSS.encode()
+        if url.endswith("merged.ttf"):
+            return merged
+        raise AssertionError(f"unexpected URL {url}")
+
+    monkeypatch.setenv("CARDARGUS_OFFLINE", "0")
+    monkeypatch.setattr(fonts, "_http_get", fake_get)
+
+
+def test_parse_font_faces_captures_subset_names():
+    faces = fonts._parse_font_faces(GOOGLE_CSS)
+    assert [f.subset for f in faces] == ["cyrillic", "latin"]
+    assert fonts._parse_font_faces(MERGED_CSS)[0].subset is None
+
+
+def test_download_writes_provenance_sidecar(monkeypatch, tmp_path):
+    font_bytes = build_test_font(tmp_path / "x.ttf").read_bytes()
+    woff2 = io.BytesIO()
+    f = TTFont(io.BytesIO(font_bytes))
+    f.flavor = "woff2"
+    f.save(woff2)
+
+    def fake_get(url, ua, timeout=15.0):
+        if "googleapis" in url:
+            return GOOGLE_CSS.encode()
+        return woff2.getvalue()
+
+    monkeypatch.setenv("CARDARGUS_OFFLINE", "0")
+    monkeypatch.setattr(fonts, "_http_get", fake_get)
+    path = fonts.download_google_font("Jost")
+    assert fonts._read_provenance(path) == ["latin"]
+
+
+def test_ensure_font_for_text_leaves_fonts_without_sidecar_alone(test_font, monkeypatch):
+    # Local fonts (register_font) have no .gsubsets sidecar: never touched,
+    # never any network, even online and with unmapped characters.
+    monkeypatch.setenv("CARDARGUS_OFFLINE", "0")
+
+    def boom(*a, **k):  # pragma: no cover - must not be called
+        raise AssertionError("network access attempted")
+
+    monkeypatch.setattr(fonts, "_http_get", boom)
+    before = fonts.ensure_font("TestSans")
+    assert fonts._read_provenance(before) is None
+    after = fonts.ensure_font_for_text("TestSans", "Łódź")
+    assert after == before
+
+
+def test_ensure_font_for_text_is_noop_when_covered(monkeypatch, tmp_path):
+    dest = _seed_partial_latin_font(tmp_path)
+
+    def boom(*a, **k):  # pragma: no cover
+        raise AssertionError("network access attempted")
+
+    monkeypatch.setenv("CARDARGUS_OFFLINE", "0")
+    monkeypatch.setattr(fonts, "_http_get", boom)
+    # All chars inside the cached cmap: no upgrade, no network.
+    assert fonts.ensure_font_for_text("Upfam", "Educacao") == dest
+
+
+def test_ensure_font_for_text_upgrades_partial_block(monkeypatch, tmp_path):
+    dest = _seed_partial_latin_font(tmp_path)
+    # Stale derived subset must be dropped by the upgrade.
+    stale_sub = font_cache_dir() / "Upfam_sub0123456789.woff2"
+    stale_sub.write_bytes(dest.read_bytes())
+
+    calls: list[str] = []
+    _upgrade_http_mock(monkeypatch, tmp_path, calls)
+
+    path = fonts.ensure_font_for_text("Upfam", "Łódź")
+    assert path is not None and path.name == "Upfam.ttf"
+    assert not dest.exists()
+    assert not fonts._provenance_sidecar(dest).exists()
+    assert not stale_sub.exists()
+    assert fonts._read_provenance(path) == ["latin", "latin-ext"]
+    assert ord("Ł") in TTFont(str(path), lazy=True).getBestCmap()
+
+    # Second call: covered by the upgraded cmap, no further network.
+    n = len(calls)
+    assert fonts.ensure_font_for_text("Upfam", "Łódź") == path
+    assert len(calls) == n
+
+
+def test_ensure_font_for_text_glyphs_the_family_lacks(monkeypatch, tmp_path):
+    dest = _seed_partial_latin_font(tmp_path)
+    calls: list[str] = []
+    _upgrade_http_mock(monkeypatch, tmp_path, calls)
+
+    # Cyrillic is not among the family's CSS2 blocks: keep the cached file.
+    assert fonts.ensure_font_for_text("Upfam", "Д") == dest
+    # And the failed attempt is memoized (css2 fetched exactly once).
+    fonts.ensure_font_for_text("Upfam", "Д")
+    assert calls.count("https://fonts.googleapis.com/css2?family=Upfam:wght@400&display=swap") == 1
+
+
+def test_str_metrics_upgrade_gives_exact_metrics(monkeypatch, tmp_path):
+    _seed_partial_latin_font(tmp_path)
+    calls: list[str] = []
+    _upgrade_http_mock(monkeypatch, tmp_path, calls)
+
+    m = str_metrics("Ł", font="Upfam", fontsize=10)
+    # Exact: advance 500 on a 1000 em -> 5.0. The heuristic would give 5.5.
+    assert m.width == pytest.approx(5.0)
+
+
+def test_register_font_clears_provenance_and_stale_subsets(tmp_path):
+    dest = _seed_partial_latin_font(tmp_path, family="TestSans")
+    stale_sub = font_cache_dir() / "TestSans_sub0123456789.woff2"
+    stale_sub.write_bytes(dest.read_bytes())
+
+    src = build_test_font(tmp_path / "TestSans-Regular.ttf")
+    out = register_font(src)
+    assert out.name == "TestSans.ttf"
+    assert not dest.exists()
+    assert not fonts._provenance_sidecar(dest).exists()
+    assert fonts._read_provenance(out) is None
+    assert not stale_sub.exists()
+
+
+def test_save_svg_upgrades_embedded_font(monkeypatch, tmp_path):
+    _seed_partial_latin_font(tmp_path)
+    calls: list[str] = []
+    _upgrade_http_mock(monkeypatch, tmp_path, calls)
+
+    svg = (
+        "<svg xmlns='http://www.w3.org/2000/svg'>"
+        "<text font-family='Upfam'>Łódź</text></svg>"
+    )
+    out = save_svg(svg, tmp_path / "card.svg")
+    embedded = _embedded_font(out.read_text(encoding="utf-8"))
+    assert ord("Ł") in embedded.getBestCmap()

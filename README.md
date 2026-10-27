@@ -176,6 +176,13 @@ The known differences, mostly deliberate:
   hex values differ, because R hashes serialized objects.
 - Subsetting runs locally with fontTools, not through the Google Fonts
   `&text=` API.
+- Non-latin coverage: when card text needs glyphs beyond Google's default
+  *latin* block (Polish, Vietnamese, Cyrillic, ...), the R package embeds
+  extra per-script `@font-face` blocks with `unicode-range`; the Python
+  package instead upgrades the cached font in place to a single merged TTF
+  from the legacy `subset=` endpoint (text metrics and local subsetting need
+  one file). Same glyphs, different file layout. Latin-only cards keep the
+  small WOFF2. Fonts added with `register_font()` are never replaced.
 
 ## Development
 
