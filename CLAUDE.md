@@ -24,7 +24,7 @@ contraparte lá (ou registro consciente da divergência no README, seção
 | `sparklines.py` | `create_sparkline()` line/area/bar. |
 | `badges.py` | `create_badge()`, `css_gradient_to_svg()`. |
 | `icons.py` / `logos.py` | Ícones embutidos (path data copiado do R) e `resolve_svg_source()` (ver segurança). |
-| `fonts.py` | Cache (platformdirs), download Google WOFF2, métricas via fontTools, **subsetting LOCAL** (fontTools.subset, não a API `&text=` do R). |
+| `fonts.py` | Cache (platformdirs), download Google WOFF2, métricas via fontTools, **subsetting LOCAL** (fontTools.subset, não a API `&text=` do R). Cobertura não-latin (port da issue #29 do R): sidecar `.gsubsets` marca proveniência/subsets do download CSS; texto com glifos fora do cmap faz upgrade in-place para TTF mesclado via endpoint legado `subset=` (um arquivo serve embed+métricas+subset; `register_font()` nunca é sobreposto). |
 | `conversion.py` | `save_svg(svg, path, subset_fonts=False)`. |
 | `utils.py` | `escape_xml`, `wrap_text`, `compress_number` (pt-BR), `validate_color`/`validate_font_family`. |
 | `_svgparse.py` / `_colors.py` | Parsing regex de SVG e cores nomeadas (CSS + gray ramp do R). |

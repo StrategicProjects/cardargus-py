@@ -135,5 +135,61 @@ def svg_text_content(svg: str) -> str:
     return html.unescape("".join(m.group(2) for m in _TEXT_NODE_RE.finditer(s)))
 
 
+def svg_text_by_family(svg: str) -> dict[str, str] | None:
+    """Visible text grouped by the font family that renders it.
+
+    Each text node is attributed to the NEAREST ancestor-or-self element
+    declaring a family, via the ``font-family`` presentation attribute or an
+    inline ``style`` (style wins over the attribute on the same node, as in
+    CSS). Text whose family cannot be resolved (e.g. set through a CSS class
+    in ``<style>``) goes under the special key ``".unresolved"`` -- the
+    caller should charge it to every family. Returns ``None`` when the SVG
+    is not parseable as XML; the caller then falls back to the global text.
+
+    Used to upgrade font coverage only for the families whose text actually
+    needs it (R package issue #29).
+    """
+    import xml.etree.ElementTree as ET
+
+    try:
+        root = ET.fromstring(strip_xml_declaration(svg))
+    except ET.ParseError:
+        return None
+
+    parent: dict = {}
+    for p in root.iter():
+        for c in p:
+            parent[c] = p
+
+    out: dict[str, str] = {}
+    for el in root.iter():
+        if el.tag.rsplit("}", 1)[-1] not in ("text", "tspan", "textPath"):
+            continue
+        txt = "".join(el.itertext())
+        if not txt:
+            continue
+        fam = None
+        node = el
+        while node is not None:
+            sty = node.get("style")
+            if sty and "font-family" in sty:
+                m = _CSS_FAMILY_RE.search(sty)
+                if m:
+                    fam = m.group(1)
+                    break
+            attr = node.get("font-family")
+            if attr:
+                fam = attr
+                break
+            node = parent.get(node)
+        key = ".unresolved"
+        if fam:
+            norm = normalize_font_families([fam])
+            if norm:
+                key = norm[0]
+        out[key] = out.get(key, "") + txt
+    return out
+
+
 def strip_xml_declaration(svg: str) -> str:
     return _XML_DECL_RE.sub("", svg)

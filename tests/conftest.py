@@ -22,13 +22,15 @@ TEST_FONT_CHARS = (
 TEST_FONT_DESCENDERS = set("gjpqy,")
 
 
-def build_test_font(path: Path, family: str = "TestSans") -> Path:
+def build_test_font(path: Path, family: str = "TestSans", chars: str | None = None) -> Path:
     """Write a tiny TrueType font with predictable metrics."""
     from fontTools.fontBuilder import FontBuilder
     from fontTools.pens.ttGlyphPen import TTGlyphPen
 
-    names = [".notdef"] + [f"uni{ord(c):04X}" for c in TEST_FONT_CHARS]
-    cmap = {ord(c): f"uni{ord(c):04X}" for c in TEST_FONT_CHARS}
+    chars = TEST_FONT_CHARS if chars is None else chars
+    chars = "".join(dict.fromkeys(chars))
+    names = [".notdef"] + [f"uni{ord(c):04X}" for c in chars]
+    cmap = {ord(c): f"uni{ord(c):04X}" for c in chars}
     fb = FontBuilder(1000, isTTF=True)
     fb.setupGlyphOrder(names)
     fb.setupCharacterMap(cmap)
@@ -60,6 +62,8 @@ def build_test_font(path: Path, family: str = "TestSans") -> Path:
 def _reset_font_state() -> None:
     fonts._clear_metrics_cache()
     fonts._FAILED_FAMILIES.clear()
+    fonts._UPGRADE_ATTEMPTED.clear()
+    fonts._FAMILY_BLOCKS.clear()
 
 
 @pytest.fixture(autouse=True)
